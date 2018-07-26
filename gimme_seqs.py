@@ -32,215 +32,219 @@ __author_email__ = "J.R.J.Healey@warwick.ac.uk"
 
 # Import SearchIO and suppress experimental warning
 from Bio import BiopythonExperimentalWarning
+
 with warnings.catch_warnings():
-	warnings.simplefilter('ignore', BiopythonExperimentalWarning)
-	from Bio import SearchIO
+    warnings.simplefilter('ignore', BiopythonExperimentalWarning)
+    from Bio import SearchIO
 
-		
+
 def convert(basename, genbank):
-	'''Convert the provided genbank to a fasta to BLAST.'''
-	
-	refFasta = "{}.fasta.tmp".format(basename)
-	SeqIO.convert(genbank, 'genbank', refFasta, 'fasta')
+    '''Convert the provided genbank to a fasta to BLAST.'''
 
-	return refFasta
+    refFasta = "{}.fasta.tmp".format(basename)
+    SeqIO.convert(genbank, 'genbank', refFasta, 'fasta')
+
+    return refFasta
+
 
 def runBlast(basename, refFasta, fasta, verbose):
-	'''Synthesise BLAST commands and make system calls'''
+    '''Synthesise BLAST commands and make system calls'''
 
-	resultHandle = "{}.blastout.tmp".format(basename)
-	blastdb_cmd = 'makeblastdb -in {0} -dbtype nucl -title temp_blastdb'.format(refFasta)
-	blastn_cmd = 'blastn -query {0} -strand both -task blastn -db {1} -outfmt 6 -out {2}'.format(fasta, refFasta, resultHandle)
+    resultHandle = "{}.blastout.tmp".format(basename)
+    blastdb_cmd = 'makeblastdb -in {0} -dbtype nucl -title temp_blastdb'.format(refFasta)
+    blastn_cmd = 'blastn -query {0} -strand both -task blastn -db {1} -outfmt 6 -out {2}'.format(fasta, refFasta,
+                                                                                                 resultHandle)
 
-	print("Constructing BLAST Database: " + '\n' + blastdb_cmd)
-	print("BLASTing: " + '\n' + blastn_cmd)
-	DB_process = subprocess.Popen(blastdb_cmd,
-				      shell=True,
-				      stdin=subprocess.PIPE,
-				      stdout=subprocess.PIPE,
-				      stderr=subprocess.PIPE)
-	DB_process.wait()
-	BLAST_process = subprocess.Popen(blastn_cmd,
-					 shell=True,
-					 stdin=subprocess.PIPE,
-					 stdout=subprocess.PIPE,
-					 stderr=subprocess.PIPE)
-	BLAST_process.wait()
+    print("Constructing BLAST Database: " + '\n' + blastdb_cmd)
+    print("BLASTing: " + '\n' + blastn_cmd)
+    DB_process = subprocess.Popen(blastdb_cmd,
+                                  shell=True,
+                                  stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE)
+    DB_process.wait()
+    BLAST_process = subprocess.Popen(blastn_cmd,
+                                     shell=True,
+                                     stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
+    BLAST_process.wait()
 
-	return resultHandle
-	     
+    return resultHandle
+
+
 def getIndices(resultHandle):
-	'''If not provided directly by the user, this function retrieves the best BLAST hit's indices.'''
-	
-	blast_result = SearchIO.read(resultHandle, 'blast-tab')
+    '''If not provided directly by the user, this function retrieves the best BLAST hit's indices.'''
 
-	print(blast_result[0][0])
-	start = blast_result[0][0].hit_start
-	end = blast_result[0][0].hit_end
-		
-	return start, end
+    blast_result = SearchIO.read(resultHandle, 'blast-tab')
+
+    print(blast_result[0][0])
+    start = blast_result[0][0].hit_start
+    end = blast_result[0][0].hit_end
+
+    return start, end
+
 
 def slice(start, end, target, format, FPoffset, TPoffset):
-	'''Subset the provided target to return the sub record.'''
-	
-	seqObj = SeqIO.read(target, format)
-	subRecord = seqObj[start-FPoffset:end+TPoffset]
+    '''Subset the provided target to return the sub record.'''
 
-	return subRecord
+    seqObj = SeqIO.read(target, format)
+    subRecord = seqObj[start - FPoffset:end + TPoffset]
+
+    return subRecord
 
 
 def main():
-###################################################################################################
-# Parse command line arguments
-	import argparse
-	try:
-   		parser = argparse.ArgumentParser(
-   			description='This script slices entries such as genes or operons out of a genbank, subsetting them as their own file.')
-		parser.add_argument(
-			'target',
-			action='store',
-			help='The target file to extract a sequence from.')
-                parser.add_argument(
-                        'fasta',
-                        action='store',
-                        help='A reference fasta to search for.')
-		parser.add_argument(
-			'-o',
-			'--outfile',
-			action='store',
-			help='If specifed, the script will write a file, otherwise redirect STDOUT for pipelines.')
-		parser.add_argument(
-			'-s',
-			'--start',
-			type=int,
-			help='Integer base index to slice from.')
-		parser.add_argument(
-			'-e',
-			'--end',
-			type=int,
-			default=0,
-			help='Integer base index to slice to.')
-		parser.add_argument(
-			'-F',
-			'--FPoffset',
-			action='store',
-			type=int,
-			default=0,
-			help='If you want to capture regions around the target site, specify the 5\' offset.')
-		parser.add_argument(
-			'-T',
-			'--TPoffset',
-			action='store',
-			type=int,
-			default=0,
-			help='If you want to capture regions around the target site, specify the 3\' offset.')
-		parser.add_argument(
-			'-b',
-			'--blastmode',
-			action='store_true',
-			help='If flag is set, provide an input fasta (-f | --fasta), and BLAST will be called to find your sequence indices in the original genbank.')
-		parser.add_argument(
-			'-t',
-			'--tidy',
-			action='store_true',
-			help='Tell the script whether or not to remove the temporary files it generated during processing. Off by default. WARNING: removes files based on the "tmp" string.')
-		parser.add_argument(
-			'-m',
-			'--meta',
-			action='store',
-			default=None,
-			help='Specify a string to use as the Genbank meta-data fields if the parent one doesn\'t contain anything. Else inherits from parent sequence.')
-		parser.add_argument(
-			'-v',
-			'--verbose',
-			action='store_true',
-			help='Verbose behaviour. Shows progress of BLAST etc. if appropriate.')
-		parser.add_argument(
-			'-f',
-			'--format',
-			action='store',
-			default='fasta',
-			help='Target sequence format (genbank or fasta).')
-		parser.add_argument(
-			'-p',
-			'--outfmt',
-			action='store',
-			default='fasta',
-			help='Output file format to write.')
-		args = parser.parse_args()
+    ###################################################################################################
+    # Parse command line arguments
+    import argparse
+    try:
+        parser = argparse.ArgumentParser(
+            description='This script slices entries such as genes or operons out of a genbank, subsetting them as their own file.')
+        parser.add_argument(
+            'target',
+            action='store',
+            help='The target file to extract a sequence from.')
+        parser.add_argument(
+            'fasta',
+            action='store',
+            help='A reference fasta to search for.')
+        parser.add_argument(
+            '-o',
+            '--outfile',
+            action='store',
+            help='If specifed, the script will write a file, otherwise redirect STDOUT for pipelines.')
+        parser.add_argument(
+            '-s',
+            '--start',
+            type=int,
+            help='Integer base index to slice from.')
+        parser.add_argument(
+            '-e',
+            '--end',
+            type=int,
+            default=0,
+            help='Integer base index to slice to.')
+        parser.add_argument(
+            '-F',
+            '--FPoffset',
+            action='store',
+            type=int,
+            default=0,
+            help='If you want to capture regions around the target site, specify the 5\' offset.')
+        parser.add_argument(
+            '-T',
+            '--TPoffset',
+            action='store',
+            type=int,
+            default=0,
+            help='If you want to capture regions around the target site, specify the 3\' offset.')
+        parser.add_argument(
+            '-b',
+            '--blastmode',
+            action='store_true',
+            help='If flag is set, provide an input fasta (-f | --fasta), and BLAST will be called to find your sequence indices in the original genbank.')
+        parser.add_argument(
+            '-t',
+            '--tidy',
+            action='store_true',
+            help='Tell the script whether or not to remove the temporary files it generated during processing. Off by default. WARNING: removes files based on the "tmp" string.')
+        parser.add_argument(
+            '-m',
+            '--meta',
+            action='store',
+            default=None,
+            help='Specify a string to use as the Genbank meta-data fields if the parent one doesn\'t contain anything. Else inherits from parent sequence.')
+        parser.add_argument(
+            '-v',
+            '--verbose',
+            action='store_true',
+            help='Verbose behaviour. Shows progress of BLAST etc. if appropriate.')
+        parser.add_argument(
+            '-f',
+            '--format',
+            action='store',
+            default='fasta',
+            help='Target sequence format (genbank or fasta).')
+        parser.add_argument(
+            '-p',
+            '--outfmt',
+            action='store',
+            default='fasta',
+            help='Output file format to write.')
+        args = parser.parse_args()
 
-	except NameError:
-		print "An exception occured with argument parsing. Check your provided options."
-	
-	target    =  args.target
-	fasta     =  args.fasta
-	split     =  os.path.splitext(args.target)
-	basename  =  os.path.basename(split[0])
-	start     =  args.start
-	end       =  args.end
-	FPoffset  =  args.FPoffset
-	TPoffset  =  args.TPoffset
-	blastMode =  args.blastmode
-	outfile   =  args.outfile
-	tidy      =  args.tidy
-	meta	  =  args.meta
-	verbose   =  args.verbose
-	format    =  args.format
-	outfmt =  args.outfmt
+    except NameError:
+        print "An exception occured with argument parsing. Check your provided options."
 
-# Main code:
-#	if target.lower().endswith(('.gbk', '.gb')):
-#		if blastMode is not False and fasta is not None:
-#			refFasta = convert(basename,genbank)
-#			resultHandle = runBlast(basename, refFasta, fasta, verbose)
-#			start, end = getIndices(resultHandle)
-#		else:
-#			blastMode is not False and if fasta is None:
-#				print("No fasta was provided so BLAST mode cannot be used.")
-#				sys.exit(1)
-	if target.lower().endswith(('.fas', '.fasta', '.fa')):
-		refFasta = target
-		resultHandle = runBlast(basename, refFasta, fasta, verbose)
-		start, end = getIndices(resultHandle)
+    target = args.target
+    fasta = args.fasta
+    split = os.path.splitext(args.target)
+    basename = os.path.basename(split[0])
+    start = args.start
+    end = args.end
+    FPoffset = args.FPoffset
+    TPoffset = args.TPoffset
+    blastMode = args.blastmode
+    outfile = args.outfile
+    tidy = args.tidy
+    meta = args.meta
+    verbose = args.verbose
+    format = args.format
+    outfmt = args.outfmt
+
+    # Main code:
+    #	if target.lower().endswith(('.gbk', '.gb')):
+    #		if blastMode is not False and fasta is not None:
+    #			refFasta = convert(basename,genbank)
+    #			resultHandle = runBlast(basename, refFasta, fasta, verbose)
+    #			start, end = getIndices(resultHandle)
+    #		else:
+    #			blastMode is not False and if fasta is None:
+    #				print("No fasta was provided so BLAST mode cannot be used.")
+    #				sys.exit(1)
+    if target.lower().endswith(('.fas', '.fasta', '.fa')):
+        refFasta = target
+        resultHandle = runBlast(basename, refFasta, fasta, verbose)
+        start, end = getIndices(resultHandle)
+    else:
+        sys.stderr.write("Expected a fasta target sequence, but didn't recognise the file extension")
+
+    if start is None or end is None:
+        sys.stderr.write('No slice indices have been specified or retrieved from blastout')
+        sys.exit(1)
+
+    subRecord = slice(start, end, target, format, FPoffset, TPoffset)
+    # Populate the metadata of the genbank
+    if meta is not None:
+        subRecord.id = meta
+        subRecord.locus = meta + 'subregion'
+        subRecord.accession = meta
+        subRecord.name = meta
+        subRecord.annotations["date"] = time.strftime("%d-%b-%Y").upper()
+    # Other field options include:
+    #  subRecord.annotations["source"]
+    #			["taxonomy"]
+    #			["keywords"]
+    #			["references"]
+    #			["accessions"]
+    #			["data_file_division"] e.g. BCT, PLN, UNK
+    #			["organism"]
+    #			["topology"]
+
+    if outfile is not None:
+        SeqIO.write(subRecord, outfile, outfmt)
+    else:
+        print(subRecord.format(outfmt))
+
+    if blastMode is True and tidy is True:
+        if verbose is True:
+            rm = "rm -v ./*tmp*"
         else:
-        	sys.stderr.write("Expected a fasta target sequence, but didn't recognise the file extension")
+            rm = "rm ./*tmp*"
 
-	if start is None or end is None:
-        	sys.stderr.write('No slice indices have been specified or retrieved from blastout')
-                sys.exit(1)
+        subprocess.Popen(rm, shell=True)
 
-
-	subRecord = slice(start, end, target, format, FPoffset, TPoffset)
-	# Populate the metadata of the genbank
-	if meta is not None:
-		subRecord.id = meta
-		subRecord.locus = meta + 'subregion'
-		subRecord.accession = meta
-		subRecord.name = meta
-		subRecord.annotations["date"] = time.strftime("%d-%b-%Y").upper()
-		# Other field options include:
-		#  subRecord.annotations["source"]
-		#			["taxonomy"]
-		#			["keywords"]
-		#			["references"]
-		#			["accessions"]
-		#			["data_file_division"] e.g. BCT, PLN, UNK
-		#			["organism"]
-		#			["topology"]
-		
-	if outfile is not None:
-		SeqIO.write(subRecord, outfile, outfmt)
-	else:
-		print(subRecord.format(outfmt))
-
-	if blastMode is True and tidy is True:
-		if verbose is True:
-			rm="rm -v ./*tmp*"
-		else:	
-			rm="rm ./*tmp*"
-			
-		subprocess.Popen(rm,shell=True)
 
 if __name__ == "__main__":
-	main()
-
+    main()
