@@ -175,7 +175,7 @@ def main():
         args = parser.parse_args()
 
     except NameError:
-        print "An exception occured with argument parsing. Check your provided options."
+        sys.stderr.write("An exception occured with argument parsing. Check your provided options.")
 
     target = args.target
     fasta = args.fasta
